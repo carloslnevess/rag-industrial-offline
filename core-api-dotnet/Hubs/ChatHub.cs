@@ -19,10 +19,11 @@ public class ChatHub : Hub
     {
         var ct = Context.ConnectionAborted;
         var sw = Stopwatch.StartNew();
+        var modeloAtivo = _orchestrator.ResolverModelo(req.ModeloLlm);
 
         try
         {
-            await Clients.Caller.SendAsync("StatusAtualizado", "Gerando resposta...", ct);
+            await Clients.Caller.SendAsync("StatusAtualizado", $"Gerando resposta ({modeloAtivo})...", ct);
 
             var casual = _orchestrator.EhConversaCasual(req.Pergunta);
             List<FragmentoDto> fontes = [];
@@ -46,7 +47,7 @@ public class ChatHub : Hub
 
             sw.Stop();
             var textoFinal = RagOrchestratorService.LimparPensamento(respostaCompleta.ToString());
-            var historicoId = await _orchestrator.SalvarHistoricoAsync(req, textoFinal, fontes, sw.ElapsedMilliseconds, ct);
+            var historicoId = await _orchestrator.SalvarHistoricoAsync(req, textoFinal, fontes, sw.ElapsedMilliseconds, modeloAtivo, ct);
 
             await Clients.Caller.SendAsync("FinalizarResposta", new
             {
@@ -55,12 +56,12 @@ public class ChatHub : Hub
                 casosValidados,
                 historicoId,
                 tempoMs = sw.ElapsedMilliseconds,
-                modelo = _orchestrator.ModeloAtual
+                modelo = modeloAtivo
             }, ct);
         }
         catch (Exception ex)
         {
-            await Clients.Caller.SendAsync("ErroConsulta", $"Falha no processamento: {ex.Message}", ct);
+            await Clients.Caller.SendAsync("ErroConsulta", $"Falha no processamento ({modeloAtivo}): {ex.Message}", ct);
         }
     }
 }

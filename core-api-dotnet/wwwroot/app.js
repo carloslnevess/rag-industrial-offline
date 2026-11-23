@@ -11,6 +11,8 @@ const el = {
   usuarioInput: document.getElementById("usuarioInput"),
   raciocinioProfundo: document.getElementById("raciocinioProfundo"),
   btnRecarregarFiltros: document.getElementById("btnRecarregarFiltros"),
+  modeloSelect: document.getElementById("modeloSelect"),
+  btnAtualizarModelos: document.getElementById("btnAtualizarModelos"),
   chatMessages: document.getElementById("chatMessages"),
   chatForm: document.getElementById("chatForm"),
   perguntaInput: document.getElementById("perguntaInput"),
@@ -33,6 +35,10 @@ let filtroAuditoriaAtual = "todos";
 
 function textoModoAtual() {
   return el.modoOperacao.options[el.modoOperacao.selectedIndex].text;
+}
+
+function modeloSelecionado() {
+  return el.modeloSelect.value || null;
 }
 
 function formatarTempo(ms) {
@@ -61,7 +67,7 @@ function limparConversa() {
   historicoConversa = [];
   el.chatMessages.innerHTML = `
     <div class="msg assistant">
-      <div class="msg-header">Assistente T\u00e9cnico \u2022 Qwen3 Local</div>
+      <div class="msg-header">Assistente T\u00e9cnico \u2022 Ollama Local</div>
       <div class="msg-body">
         Nova conversa iniciada. Como posso te ajudar agora?
       </div>
@@ -97,6 +103,45 @@ el.auditFilters.addEventListener("click", (e) => {
 });
 
 el.btnToggleMenu.addEventListener("click", () => el.sidebar.classList.toggle("open"));
+
+el.modeloSelect.addEventListener("change", () => {
+  if (el.modeloSelect.value) {
+    localStorage.setItem("rag_modelo_preferido", el.modeloSelect.value);
+  }
+});
+
+el.btnAtualizarModelos.addEventListener("click", () => carregarModelos(true));
+
+async function carregarModelos(forcarFeedback = false) {
+  if (forcarFeedback) {
+    el.btnAtualizarModelos.disabled = true;
+  }
+  try {
+    const resp = await fetch("/api/modelos");
+    const modelos = await resp.json();
+    const salvo = localStorage.getItem("rag_modelo_preferido");
+
+    el.modeloSelect.innerHTML = modelos.map((m) => {
+      const perfil = m.nome.toLowerCase().includes("qwen3")
+        ? "An\u00e1lise/Racioc\u00ednio"
+        : (m.tamanhoGb > 0 && m.tamanhoGb <= 2.5 ? "R\u00e1pido" : "Geral");
+      const infoExtra = m.tamanhoGb > 0 ? ` (${perfil} \u2022 ${m.tamanhoGb} GB)` : "";
+      return `<option value="${escapeHtml(m.nome)}">${escapeHtml(m.nome)}${escapeHtml(infoExtra)}</option>`;
+    }).join("");
+
+    if (salvo && modelos.some((m) => m.nome === salvo)) {
+      el.modeloSelect.value = salvo;
+    } else {
+      const padrao = modelos.find((m) => m.ehPadrao) || modelos[0];
+      if (padrao) el.modeloSelect.value = padrao.nome;
+    }
+  } catch (err) {
+    console.error("Erro ao varrer modelos do Ollama:", err);
+    el.modeloSelect.innerHTML = `<option value="llama3.2:latest">llama3.2:latest</option>`;
+  } finally {
+    el.btnAtualizarModelos.disabled = false;
+  }
+}
 
 function escapeHtml(str) {
   return (str || "")
@@ -470,6 +515,7 @@ el.chatForm.addEventListener("submit", async (e) => {
     categoria: el.filtroCategoria.value || null,
     maquina: el.filtroMaquina.value || null,
     usuario: el.usuarioInput.value.trim() || "operador_local",
+    modeloLlm: modeloSelecionado(),
     raciocinioProfundo: el.raciocinioProfundo.checked,
     topK: 5,
     historico: historicoConversa.slice(-6),
@@ -651,5 +697,6 @@ el.btnRecarregarFiltros.addEventListener("click", carregarFiltros);
 el.btnAtualizarDocs.addEventListener("click", carregarDocumentos);
 el.btnAtualizarHist.addEventListener("click", carregarHistorico);
 
+carregarModelos();
 carregarFiltros();
 iniciarSignalR();

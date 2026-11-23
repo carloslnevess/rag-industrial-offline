@@ -55,7 +55,83 @@ public class RagOrchestratorService
             ?? "http://localhost:11434";
 
         _llmModel = Environment.GetEnvironmentVariable("LLM_MODEL")
-            ?? "qwen3:4b";
+            ?? "llama3.2:latest";
+    }
+
+    public string ResolverModelo(string? modeloSolicitado)
+    {
+        if (string.IsNullOrWhiteSpace(modeloSolicitado))
+            return _llmModel;
+
+        var limpo = modeloSolicitado.Trim();
+        if (limpo.Length > 80 || limpo.Contains("embed", StringComparison.OrdinalIgnoreCase))
+            return _llmModel;
+
+        return limpo;
+    }
+
+    public async Task<List<ModeloOllamaDto>> ListarModelosOllamaAsync(CancellationToken ct)
+    {
+        var modelos = new List<ModeloOllamaDto>();
+
+        try
+        {
+            using var resp = await _http.GetAsync($"{_ollamaUrl}/api/tags", ct);
+            resp.EnsureSuccessStatusCode();
+
+            await using var stream = await resp.Content.ReadAsStreamAsync(ct);
+            using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: ct);
+
+            if (doc.RootElement.TryGetProperty("models", out var arr) && arr.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var item in arr.EnumerateArray())
+                {
+                    var nome = item.TryGetProperty("name", out var nEl) ? nEl.GetString() : null;
+                    if (string.IsNullOrWhiteSpace(nome)) continue;
+
+                    // Ignora modelos dedicados apenas a embeddings
+                    if (nome.Contains("embed", StringComparison.OrdinalIgnoreCase))
+                        continue;
+
+                    double tamanhoGb = 0;
+                    if (item.TryGetProperty("size", out var sEl) && sEl.TryGetInt64(out var bytes))
+                        tamanhoGb = Math.Round(bytes / (1024.0 * 1024.0 * 1024.0), 1);
+
+                    string? paramSize = null;
+                    if (item.TryGetProperty("details", out var dEl) &&
+                        dEl.TryGetProperty("parameter_size", out var pEl))
+                    {
+                        paramSize = pEl.GetString();
+                    }
+
+                    modelos.Add(new ModeloOllamaDto(
+                        nome,
+                        tamanhoGb,
+                        paramSize,
+                        string.Equals(nome, _llmModel, StringComparison.OrdinalIgnoreCase)
+                    ));
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[AVISO] Nao foi possivel listar modelos do Ollama: {ex.Message}");
+        }
+
+        if (modelos.Count == 0)
+        {
+            modelos.Add(new ModeloOllamaDto(_llmModel, 0, null, true));
+        }
+        else if (!modelos.Any(m => m.EhPadrao))
+        {
+            var primeiro = modelos[0];
+            modelos[0] = primeiro with { EhPadrao = true };
+        }
+
+        return modelos
+            .OrderByDescending(m => m.EhPadrao)
+            .ThenBy(m => m.TamanhoGb)
+            .ToList();
     }
 
     public async Task GarantirSchemaAprendizadoAsync(CancellationToken ct = default)
@@ -105,9 +181,13 @@ public class RagOrchestratorService
         return false;
     }
 
-    public bool DeveUsarRaciocinio(ConsultaRequest req)
+    public bool DeveUsarRaciocinio(ConsultaRequest req, string modeloAtivo)
     {
-        if (EhConversaCasual(req.Pergunta))
+        // Apenas familia Qwen3 / DeepSeek-R1 suporta tags nativas /think
+        var suportaThink = modeloAtivo.Contains("qwen3", StringComparison.OrdinalIgnoreCase)
+                        || modeloAtivo.Contains("deepseek-r1", StringComparison.OrdinalIgnoreCase);
+
+        if (!suportaThink || EhConversaCasual(req.Pergunta))
             return false;
 
         if (req.RaciocinioProfundo)
@@ -331,8 +411,9 @@ public class RagOrchestratorService
         List<CasoValidadoDto> casosValidados,
         [EnumeratorCancellation] CancellationToken ct)
     {
+        var modeloAtivo = ResolverModelo(req.ModeloLlm);
         var casual = EhConversaCasual(req.Pergunta);
-        var usarRaciocinio = DeveUsarRaciocinio(req);
+        var usarRaciocinio = DeveUsarRaciocinio(req, modeloAtivo);
         var systemPrompt = MontarPromptSistema(req.ModoOperacao);
 
         var messages = new List<object>
@@ -359,7 +440,10 @@ public class RagOrchestratorService
         }
 
         var userPrompt = MontarPromptUsuario(req.Pergunta, fragmentos, casosValidados, casual);
-        userPrompt += usarRaciocinio ? "\n/think" : "\n/no_think";
+        if (modeloAtivo.Contains("qwen3", StringComparison.OrdinalIgnoreCase))
+        {
+            userPrompt += usarRaciocinio ? "\n/think" : "\n/no_think";
+        }
         messages.Add(new { role = "user", content = userPrompt });
 
         var temperatura = string.Equals(req.ModoOperacao, "consulta_geral", StringComparison.OrdinalIgnoreCase)
@@ -368,7 +452,7 @@ public class RagOrchestratorService
 
         var payload = new
         {
-            model = _llmModel,
+            model = modeloAtivo,
             stream = true,
             think = usarRaciocinio,
             options = new
@@ -424,6 +508,7 @@ public class RagOrchestratorService
         string respostaCompleta,
         List<FragmentoDto> fontes,
         long tempoMs,
+        string modeloUtilizado,
         CancellationToken ct)
     {
         var respostaLimpa = LimparPensamento(respostaCompleta);
@@ -461,7 +546,7 @@ public class RagOrchestratorService
         cmd.Parameters.AddWithValue("pergunta", req.Pergunta);
         cmd.Parameters.AddWithValue("resposta", respostaLimpa);
         cmd.Parameters.Add(new NpgsqlParameter("docs", NpgsqlDbType.Jsonb) { Value = docsJson });
-        cmd.Parameters.AddWithValue("modelo", _llmModel);
+        cmd.Parameters.AddWithValue("modelo", modeloUtilizado);
         cmd.Parameters.AddWithValue("tempo", (int)tempoMs);
 
         var idObj = await cmd.ExecuteScalarAsync(ct);

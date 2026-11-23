@@ -50,7 +50,7 @@
 
         <label class="checkbox-row">
           <input type="checkbox" id="raciocinioProfundo" />
-          <span>Racioc&iacute;nio profundo (mais lento)</span>
+          <span>Racioc&iacute;nio profundo (modelos Qwen3)</span>
         </label>
 
         <button class="btn-secondary" id="btnRecarregarFiltros" type="button">Atualizar Filtros</button>
@@ -67,27 +67,39 @@
       <section class="tab-panel active" id="tab-chat">
         <div class="chat-messages" id="chatMessages">
           <div class="msg assistant">
-            <div class="msg-header">Assistente T&eacute;cnico &bull; Qwen3 Local</div>
+            <div class="msg-header">Assistente T&eacute;cnico &bull; Ollama Local</div>
             <div class="msg-body">
-              Ol&aacute;! Estou conectado &agrave; biblioteca da f&aacute;brica e pronto para conversar. Avalie as respostas com <strong>&#128077;</strong> ou registre corre&ccedil;&otilde;es com <strong>&#128078;</strong> para que o sistema aprenda com a opera&ccedil;&atilde;o.
+              Ol&aacute;! Escolha o modelo desejado no seletor abaixo (r&aacute;pido para perguntas diretas ou mais robusto para diagn&oacute;sticos t&eacute;cnicos) e avalie as respostas para aprimorar o sistema.
             </div>
           </div>
         </div>
 
         <form class="chat-composer" id="chatForm">
-          <button
-            type="button"
-            class="btn-attach"
-            title="Envio de fotos de defeitos/pain&eacute;is (etapa futura)"
-            disabled
-          >&#128247;</button>
           <textarea
             id="perguntaInput"
             rows="1"
             placeholder="Converse normalmente ou pergunte algo sobre os documentos..."
             required
           ></textarea>
-          <button type="submit" id="btnEnviar" class="btn-primary">Enviar</button>
+          <div class="composer-toolbar">
+            <div class="composer-left">
+              <button
+                type="button"
+                class="btn-attach"
+                title="Envio de fotos de defeitos/pain&eacute;is (etapa futura)"
+                disabled
+              >&#128247;</button>
+            </div>
+            <div class="composer-right">
+              <div class="model-picker-wrap" title="Selecionar modelo instalado no Ollama">
+                <select id="modeloSelect" aria-label="Modelo de IA">
+                  <option value="">Carregando modelos...</option>
+                </select>
+                <button type="button" id="btnAtualizarModelos" class="btn-refresh-models" title="Reescanear modelos do Ollama">&#8635;</button>
+              </div>
+              <button type="submit" id="btnEnviar" class="btn-primary">Enviar</button>
+            </div>
+          </div>
         </form>
       </section>
 

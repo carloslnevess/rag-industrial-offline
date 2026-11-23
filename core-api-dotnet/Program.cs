@@ -21,7 +21,6 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
-// Garante colunas e indice de aprendizado no PostgreSQL (idempotente)
 try
 {
     using var scope = app.Services.CreateScope();
@@ -38,6 +37,9 @@ app.UseDefaultFiles();
 app.UseStaticFiles();
 
 app.MapGet("/api/health", () => Results.Ok(new { status = "ok", servico = "core-api-dotnet" }));
+
+app.MapGet("/api/modelos", async (RagOrchestratorService rag, CancellationToken ct) =>
+    Results.Ok(await rag.ListarModelosOllamaAsync(ct)));
 
 app.MapGet("/api/filtros", async (RagOrchestratorService rag, CancellationToken ct) =>
     Results.Ok(await rag.ObterFiltrosAsync(ct)));
@@ -69,6 +71,7 @@ app.MapPost("/api/chat", async (ConsultaRequest req, RagOrchestratorService rag,
     if (string.IsNullOrWhiteSpace(req.Pergunta))
         return Results.BadRequest("A pergunta \u00e9 obrigat\u00f3ria.");
 
+    var modeloAtivo = rag.ResolverModelo(req.ModeloLlm);
     var sw = Stopwatch.StartNew();
     var tarefaFontes = rag.BuscarContextoAsync(req, ct);
     var tarefaCasos = rag.BuscarCasosValidadosAsync(req, ct);
@@ -83,9 +86,9 @@ app.MapPost("/api/chat", async (ConsultaRequest req, RagOrchestratorService rag,
 
     sw.Stop();
     var resposta = RagOrchestratorService.LimparPensamento(sb.ToString());
-    var historicoId = await rag.SalvarHistoricoAsync(req, resposta, fontes, sw.ElapsedMilliseconds, ct);
+    var historicoId = await rag.SalvarHistoricoAsync(req, resposta, fontes, sw.ElapsedMilliseconds, modeloAtivo, ct);
 
-    return Results.Ok(new ConsultaRespostaDto(resposta, fontes, sw.ElapsedMilliseconds, rag.ModeloAtual, historicoId, casosValidados));
+    return Results.Ok(new ConsultaRespostaDto(resposta, fontes, sw.ElapsedMilliseconds, modeloAtivo, historicoId, casosValidados));
 });
 
 app.MapHub<ChatHub>("/hubs/chat");

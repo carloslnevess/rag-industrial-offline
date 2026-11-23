@@ -69,6 +69,7 @@ public class ConsultaRequest
     public string? Categoria { get; set; }
     public string? Maquina { get; set; }
     public string Usuario { get; set; } = "operador_local";
+    public string? ModeloLlm { get; set; }
     public bool RaciocinioProfundo { get; set; } = false;
     public int TopK { get; set; } = 5;
     public List<MensagemHistorico> Historico { get; set; } = [];
@@ -86,6 +87,13 @@ public class AprovacaoRequest
 {
     public bool Aprovado { get; set; }
 }
+
+public record ModeloOllamaDto(
+    string Nome,
+    double TamanhoGb,
+    string? Parametros,
+    bool EhPadrao
+);
 
 public record CasoValidadoDto(
     string Id,
