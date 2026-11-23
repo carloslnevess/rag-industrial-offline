@@ -1,0 +1,32 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    container_name: rag_postgres
+    restart: unless-stopped
+    mem_limit: 768m
+    shm_size: 256m
+    command: >
+      postgres
+      -c shared_buffers=192MB
+      -c effective_cache_size=512MB
+      -c maintenance_work_mem=256MB
+      -c work_mem=16MB
+    environment:
+      POSTGRES_USER: rag_admin
+      POSTGRES_PASSWORD: rag_password_dev
+      POSTGRES_DB: industrial_rag
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./storage/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rag_admin -d industrial_rag"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - rag_net
+
+networks:
+  rag_net:
+    driver: bridge

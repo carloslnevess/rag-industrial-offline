@@ -1,0 +1,6 @@
+@IndustrialRag.Api_HostAddress = http://localhost:5238
+
+GET {{IndustrialRag.Api_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
