@@ -23,7 +23,15 @@ catch (Exception ex) { Console.WriteLine($"[AVISO] Schema: {ex.Message}"); }
 
 app.UseCors();
 app.UseDefaultFiles();
-app.UseStaticFiles();
+app.UseStaticFiles(new StaticFileOptions
+{
+    OnPrepareResponse = ctx =>
+    {
+        ctx.Context.Response.Headers["Cache-Control"] = "no-cache, no-store, must-revalidate";
+        ctx.Context.Response.Headers["Pragma"] = "no-cache";
+        ctx.Context.Response.Headers["Expires"] = "0";
+    }
+});
 
 app.MapGet("/api/health", () => Results.Ok(new { status = "ok", servico = "core-api-dotnet" }));
 
