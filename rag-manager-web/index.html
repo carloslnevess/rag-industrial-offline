@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Gerenciador Central â€¢ RAG Industrial</title>
+  <style>
+    :root { --bg:#0f141a; --panel:#161d26; --alt:#1d2633; --border:#2b3748; --text:#e6edf3; --muted:#93a3b8; --accent:#3b82f6; --ok:#22c55e; --warn:#f59e0b; --err:#ef4444; }
+    * { box-sizing: border-box; }
+    body { margin:0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background:var(--bg); color:var(--text); padding:20px; }
+    .container { max-width: 1180px; margin: 0 auto; display: flex; flex-direction: column; gap: 18px; }
+    header { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; border-bottom:1px solid var(--border); padding-bottom:12px; }
+    header h1 { margin:0; font-size:1.3rem; }
+    .grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap:12px; }
+    .card { background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:14px; }
+    .card h2 { margin:0 0 10px; font-size:0.95rem; color:#93c5fd; text-transform:uppercase; letter-spacing:0.04em; }
+    .status-row { display:flex; justify-content:space-between; align-items:center; padding:6px 0; border-bottom:1px solid rgba(43,55,72,0.5); font-size:0.9rem; }
+    .status-row:last-child { border-bottom:none; }
+    .badge { padding:3px 9px; border-radius:999px; font-size:0.75rem; font-weight:700; }
+    .badge.on { background:rgba(34,197,94,0.18); color:#86efac; }
+    .badge.off { background:rgba(239,68,68,0.18); color:#fca5a5; }
+    .btn-row { display:flex; flex-wrap:wrap; gap:8px; }
+    button { border:none; border-radius:8px; padding:9px 13px; cursor:pointer; font-weight:600; font-size:0.85rem; }
+    .btn-primary { background:var(--accent); color:#fff; }
+    .btn-ok { background:#15803d; color:#fff; }
+    .btn-warn { background:#b45309; color:#fff; }
+    .btn-err { background:#b91c1c; color:#fff; }
+    .btn-sec { background:var(--alt); color:var(--text); border:1px solid var(--border); }
+    button:disabled { opacity:0.5; cursor:not-allowed; }
+    .form-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap:10px; margin-bottom:12px; }
+    label { display:flex; flex-direction:column; gap:4px; font-size:0.8rem; color:var(--muted); }
+    input, select { background:var(--bg); color:var(--text); border:1px solid var(--border); border-radius:6px; padding:8px; font-size:0.88rem; }
+    pre { background:var(--bg); border:1px solid var(--border); border-radius:8px; padding:12px; overflow:auto; font-size:0.82rem; color:#cbd5e1; white-space:pre-wrap; margin:10px 0 0; }
+    .diag-item { padding:8px 10px; border-left:3px solid var(--warn); background:rgba(245,158,11,0.1); border-radius:4px; margin-top:6px; font-size:0.86rem; }
+    .diag-ok { border-left-color:var(--ok); background:rgba(34,197,94,0.1); }
+    .toast { font-size:0.85rem; color:#86efac; margin-top:8px; min-height:20px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div>
+        <h1>Gerenciador Central &bull; RAG Industrial Offline</h1>
+        <span style="font-size:0.82rem;color:var(--muted)">Monitoramento de servicos, gargalos, tokens e manutencao (Porta 8090)</span>
+      </div>
+      <div class="btn-row">
+        <button class="btn-sec" onclick="loadStatus()">Atualizar Agora</button>
+        <a href="http://localhost:5000" target="_blank"><button class="btn-primary" type="button">Abrir Chat RAG (5000)</button></a>
+      </div>
+    </header>
+
+    <div class="grid">
+      <div class="card">
+        <h2>Servicos</h2>
+        <div class="status-row"><span>PostgreSQL (5432)</span><span id="st-pg" class="badge off">...</span></div>
+        <div class="status-row"><span>Ollama (11434)</span><span id="st-ol" class="badge off">...</span></div>
+        <div class="status-row"><span>Worker Python (8001)</span><span id="st-py" class="badge off">...</span></div>
+        <div class="status-row"><span>Core API C# (5000)</span><span id="st-api" class="badge off">...</span></div>
+      </div>
+
+      <div class="card">
+        <h2>Hardware &amp; RAM Ollama</h2>
+        <div class="status-row"><span>CPU</span><strong id="hw-cpu">-</strong></div>
+        <div class="status-row"><span>Memoria RAM</span><strong id="hw-ram">-</strong></div>
+        <div style="margin-top:8px;font-size:0.8rem;color:var(--muted)">Carregado na RAM do Ollama agora:</div>
+        <div id="ol-loaded" style="margin-top:4px;font-size:0.85rem;color:#fcd34d">-</div>
+      </div>
+
+      <div class="card">
+        <h2>Controle de Energia</h2>
+        <div class="btn-row">
+          <button class="btn-ok" onclick="control('start_all')">Ligar Tudo</button>
+          <button class="btn-err" onclick="control('stop_app')">Parar App</button>
+          <button class="btn-warn" onclick="control('restart_api')">Reiniciar API C#</button>
+          <button class="btn-sec" onclick="control('restart_python')">Reiniciar Python</button>
+        </div>
+        <div id="ctrl-msg" class="toast"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Raio-X de Gargalos &amp; Benchmark de Tokens</h2>
+      <div class="form-grid">
+        <label>Modelo para testar
+          <select id="bench-model"></select>
+        </label>
+        <label>Mensagem de teste
+          <input id="bench-prompt" value="OlÃ¡" />
+        </label>
+      </div>
+      <button id="btn-bench" class="btn-primary" onclick="runBenchmark()">Executar Raio-X (Ollama Direto vs API C#)</button>
+      <div id="bench-result"></div>
+    </div>
+
+    <div class="card">
+      <h2>Gerenciador de Tokens &amp; Parametros (.env)</h2>
+      <div class="form-grid">
+        <label>Modelo Padrao (LLM_MODEL)<input id="env-LLM_MODEL" /></label>
+        <label>Max Tokens Gerados (OLLAMA_NUM_PREDICT)<input id="env-OLLAMA_NUM_PREDICT" type="number" /></label>
+        <label>Janela de Contexto (OLLAMA_NUM_CTX)<input id="env-OLLAMA_NUM_CTX" type="number" /></label>
+        <label>Threads CPU (OLLAMA_NUM_THREAD)<input id="env-OLLAMA_NUM_THREAD" type="number" /></label>
+        <label>Keep Alive RAM (OLLAMA_KEEP_ALIVE)<input id="env-OLLAMA_KEEP_ALIVE" /></label>
+        <label>Max Modelos RAM (OLLAMA_MAX_LOADED_MODELS)<input id="env-OLLAMA_MAX_LOADED_MODELS" type="number" /></label>
+      </div>
+      <button class="btn-primary" onclick="saveEnv()">Salvar no .env</button>
+      <div id="env-msg" class="toast"></div>
+    </div>
+
+        <div class="card">
+      <h2>Gestao de Usuarios (Criptografia PBKDF2-SHA256)</h2>
+      <div class="form-grid">
+        <label>Usuario (login)<input id="u-user" placeholder="ex: joao.silva" /></label>
+        <label>Nome completo<input id="u-nome" placeholder="ex: Joao Silva" /></label>
+        <label>Senha inicial<input id="u-pass" type="password" placeholder="Minimo 4 caracteres" /></label>
+        <label>Perfil<select id="u-perfil"><option value="operador">Operador</option><option value="admin">Administrador</option></select></label>
+      </div>
+      <div class="btn-row">
+        <button class="btn-ok" onclick="createUser()">Criar Usuario</button>
+        <button class="btn-sec" onclick="loadUsers()">Atualizar Lista</button>
+      </div>
+      <div id="u-msg" class="toast"></div>
+      <div id="users-list" style="margin-top:10px"></div>
+    </div>
+    <div class="card">
+      <h2>Manutencao &amp; Auditoria Tecnica</h2>
+      <div class="btn-row">
+        <button class="btn-sec" onclick="runMaint('db_stats')">Estatisticas PostgreSQL</button>
+        <button class="btn-sec" onclick="runMaint('vacuum')">Otimizar Banco (VACUUM)</button>
+        <button class="btn-sec" onclick="runMaint('clean_bak')">Limpar Arquivos .bak</button>
+        <button class="btn-sec" onclick="runMaint('git_status')">Git Status</button>
+      </div>
+      <pre id="maint-out">Clique em uma acao acima para ver o resultado...</pre>
+    </div>
+  </div>
+
+  <script>
+    let envLoaded = false;
+
+    function setBadge(id, ok) {
+      const el = document.getElementById(id);
+      el.textContent = ok ? "ONLINE" : "OFFLINE";
+      el.className = "badge " + (ok ? "on" : "off");
+    }
+
+    async function loadStatus() {
+      try {
+        const res = await fetch("/api/status");
+        const d = await res.json();
+        setBadge("st-pg", d.services.postgres);
+        setBadge("st-ol", d.services.ollama);
+        setBadge("st-py", d.services.python_worker);
+        setBadge("st-api", d.services.core_api);
+
+        document.getElementById("hw-cpu").textContent = d.system.cpu_percent !== null ? d.system.cpu_percent + "%" : "N/D";
+        document.getElementById("hw-ram").textContent = d.system.ram_total_gb !== null
+          ? `${d.system.ram_used_gb} / ${d.system.ram_total_gb} GB (${d.system.ram_percent}%)` : "N/D";
+
+        document.getElementById("ol-loaded").textContent = d.ollama_loaded.length
+          ? d.ollama_loaded.map(m => `${m.name} (${m.size_gb} GB)`).join(", ")
+          : "Nenhum modelo na RAM (cold start na proxima consulta)";
+
+        const sel = document.getElementById("bench-model");
+        if (sel.options.length === 0 && d.ollama_installed.length) {
+          sel.innerHTML = d.ollama_installed.map(m => `<option value="${m.name}">${m.name} (${m.size_gb} GB)</option>`).join("");
+          sel.value = d.env.LLM_MODEL || d.ollama_installed[0].name;
+        }
+
+        if (!envLoaded) {
+          ["LLM_MODEL","OLLAMA_NUM_PREDICT","OLLAMA_NUM_CTX","OLLAMA_NUM_THREAD","OLLAMA_KEEP_ALIVE","OLLAMA_MAX_LOADED_MODELS"]
+            .forEach(k => { const inp = document.getElementById("env-" + k); if (inp) inp.value = d.env[k] || ""; });
+          envLoaded = true;
+        }
+      } catch (e) { console.error(e); }
+    }
+
+    async function control(action) {
+      document.getElementById("ctrl-msg").textContent = "Executando...";
+      const res = await fetch("/api/control/" + action, { method: "POST" });
+      const d = await res.json();
+      document.getElementById("ctrl-msg").textContent = d.message || "Concluido";
+      setTimeout(loadStatus, 1500);
+    }
+
+    async function saveEnv() {
+      const keys = ["LLM_MODEL","OLLAMA_NUM_PREDICT","OLLAMA_NUM_CTX","OLLAMA_NUM_THREAD","OLLAMA_KEEP_ALIVE","OLLAMA_MAX_LOADED_MODELS"];
+      const values = {};
+      keys.forEach(k => values[k] = document.getElementById("env-" + k).value);
+      const res = await fetch("/api/env", {
+        method: "POST", headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({ values })
+      });
+      const d = await res.json();
+      document.getElementById("env-msg").textContent = d.message;
+    }
+
+    async function runBenchmark() {
+      const btn = document.getElementById("btn-bench");
+      const box = document.getElementById("bench-result");
+      btn.disabled = true;
+      box.innerHTML = "<pre>Executando teste no Ollama e na Core API C#... aguarde...</pre>";
+      try {
+        const res = await fetch("/api/benchmark", {
+          method: "POST", headers: {"Content-Type":"application/json"},
+          body: JSON.stringify({
+            modelo: document.getElementById("bench-model").value,
+            prompt: document.getElementById("bench-prompt").value
+          })
+        });
+        const d = await res.json();
+        if (!res.ok) throw new Error(d.detail || "Erro");
+        const o = d.ollama;
+        const diags = d.diagnostico.map(msg =>
+          `<div class="diag-item ${msg.startsWith('Desempenho') ? 'diag-ok' : ''}">${msg}</div>`
+        ).join("");
+        box.innerHTML = `
+          <pre>Modelo: ${d.modelo}
+Carga na RAM (load_duration) : ${o.load_s}s
+Avaliacao Prompt             : ${o.prompt_eval_s}s (${o.in_tokens} tokens)
+Geracao Resposta             : ${o.eval_s}s (${o.out_tokens} tokens -> ${o.tokens_per_sec} tok/s)
+Total Ollama Direto          : ${o.total_s}s
+Total Core API C# (/api/chat): ${d.core_api_total_s !== null ? d.core_api_total_s + "s" : "API C# Offline"}
+Resposta: "${d.resposta}"</pre>
+          ${diags}
+        `;
+        loadStatus();
+    async function loadUsers() {
+      const box = document.getElementById("users-list");
+      try {
+        const res = await fetch("/api/users");
+        const users = await res.json();
+        box.innerHTML = users.map(u => `
+          <div class="status-row">
+            <span><strong>${u.username}</strong> (${u.nome_exibicao}) &bull; <small>${u.perfil}</small></span>
+            <div class="btn-row">
+              <button class="btn-sec" onclick="resetPass('${u.id}','${u.username}')">Trocar Senha</button>
+              <button class="btn-err" onclick="deleteUser('${u.id}','${u.username}')">Excluir</button>
+            </div>
+          </div>
+        `).join("") || "Nenhum usuario cadastrado.";
+      } catch { box.textContent = "Erro ao carregar usuarios."; }
+    }
+    async function createUser() {
+      const res = await fetch("/api/users", {
+        method: "POST", headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({
+          username: document.getElementById("u-user").value,
+          nome_exibicao: document.getElementById("u-nome").value,
+          senha: document.getElementById("u-pass").value,
+          perfil: document.getElementById("u-perfil").value
+        })
+      });
+      const d = await res.json();
+      document.getElementById("u-msg").textContent = d.message || d.detail;
+      if (res.ok) { document.getElementById("u-user").value=""; document.getElementById("u-nome").value=""; document.getElementById("u-pass").value=""; loadUsers(); }
+    }
+    async function resetPass(id, uname) {
+      const p = prompt("Nova senha para " + uname + ":");
+      if (!p) return;
+      const res = await fetch(`/api/users/${id}/password`, { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ nova_senha: p }) });
+      const d = await res.json();
+      document.getElementById("u-msg").textContent = d.message || d.detail;
+    }
+    async function deleteUser(id, uname) {
+      if (!confirm("Excluir definitivamente o usuario " + uname + " e todas as suas conversas?")) return;
+      await fetch(`/api/users/${id}`, { method: "DELETE" });
+      loadUsers();
+    }
+    loadUsers();
+      } catch (e) {
+        box.innerHTML = `<pre style="color:#fca5a5">Erro: ${e.message}</pre>`;
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    async function runMaint(task) {
+      const out = document.getElementById("maint-out");
+      out.textContent = "Executando...";
+      const res = await fetch("/api/maintenance/" + task, { method: "POST" });
+      const d = await res.json();
+      out.textContent = d.output || "Concluido.";
+    }
+
+    loadStatus();
+    async function loadUsers() {
+      const box = document.getElementById("users-list");
+      try {
+        const res = await fetch("/api/users");
+        const users = await res.json();
+        box.innerHTML = users.map(u => `
+          <div class="status-row">
+            <span><strong>${u.username}</strong> (${u.nome_exibicao}) &bull; <small>${u.perfil}</small></span>
+            <div class="btn-row">
+              <button class="btn-sec" onclick="resetPass('${u.id}','${u.username}')">Trocar Senha</button>
+              <button class="btn-err" onclick="deleteUser('${u.id}','${u.username}')">Excluir</button>
+            </div>
+          </div>
+        `).join("") || "Nenhum usuario cadastrado.";
+      } catch { box.textContent = "Erro ao carregar usuarios."; }
+    }
+    async function createUser() {
+      const res = await fetch("/api/users", {
+        method: "POST", headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({
+          username: document.getElementById("u-user").value,
+          nome_exibicao: document.getElementById("u-nome").value,
+          senha: document.getElementById("u-pass").value,
+          perfil: document.getElementById("u-perfil").value
+        })
+      });
+      const d = await res.json();
+      document.getElementById("u-msg").textContent = d.message || d.detail;
+      if (res.ok) { document.getElementById("u-user").value=""; document.getElementById("u-nome").value=""; document.getElementById("u-pass").value=""; loadUsers(); }
+    }
+    async function resetPass(id, uname) {
+      const p = prompt("Nova senha para " + uname + ":");
+      if (!p) return;
+      const res = await fetch(`/api/users/${id}/password`, { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ nova_senha: p }) });
+      const d = await res.json();
+      document.getElementById("u-msg").textContent = d.message || d.detail;
+    }
+    async function deleteUser(id, uname) {
+      if (!confirm("Excluir definitivamente o usuario " + uname + " e todas as suas conversas?")) return;
+      await fetch(`/api/users/${id}`, { method: "DELETE" });
+      loadUsers();
+    }
+    loadUsers();
+    setInterval(loadStatus, 5000);
+  </script>
+</body>
+</html>

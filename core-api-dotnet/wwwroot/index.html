@@ -3,146 +3,107 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>RAG Industrial Offline</title>
+  <title>RAG Industrial â€¢ Agente Local</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <div class="app-shell">
+  <div class="auth-overlay" id="authOverlay">
+    <div class="auth-card">
+      <div class="auth-logo">&#10022;</div>
+      <h1>RAG Industrial</h1>
+      <p class="auth-sub">Entre com sua conta para acessar suas conversas privadas sobre a base t&eacute;cnica.</p>
+      <form id="authForm">
+        <input type="text" id="authUsername" placeholder="Usu&aacute;rio (ex: admin)" required autocomplete="username" />
+        <input type="password" id="authSenha" placeholder="Senha" required autocomplete="current-password" />
+        <div class="auth-error" id="authError"></div>
+        <button type="submit" class="btn-primary" id="btnAuthSubmit" style="width:100%">Entrar</button>
+      </form>
+      <p class="auth-hint">Novos usu&aacute;rios e redefini&ccedil;&atilde;o de senhas s&atilde;o gerenciados no Painel Administrador (porta 8090).</p>
+    </div>
+  </div>
+
+  <div class="app-shell" id="appShell" style="display:none">
     <aside class="sidebar" id="sidebar">
-      <div class="brand">
-        <div class="brand-dot" id="statusDot"></div>
-        <div>
+      <div class="sidebar-top">
+        <div class="brand">
+          <div class="brand-dot" id="statusDot"></div>
           <h1>RAG Industrial</h1>
-          <span id="connectionStatus">Conectando...</span>
         </div>
+        <button class="btn-new-chat" id="btnNovaConversa" type="button"><span>+</span> Nova conversa</button>
       </div>
 
-      <button class="btn-new-chat" id="btnNovaConversa" type="button">+ Nova Conversa</button>
+      <div class="sidebar-recents">
+        <div class="section-label">Recentes</div>
+        <div class="sessions-list" id="sessionsList"></div>
+      </div>
 
-      <nav class="nav-tabs">
-        <button class="tab-btn active" data-tab="chat">An&aacute;lise &amp; Chat</button>
-        <button class="tab-btn" data-tab="documentos">Biblioteca Ativa</button>
-        <button class="tab-btn" data-tab="historico">Auditoria &amp; Aprendizado</button>
-      </nav>
-
-      <div class="filters-box">
-        <h2>Par&acirc;metros da Consulta</h2>
-
-        <label for="modoOperacao">Modo de An&aacute;lise</label>
-        <select id="modoOperacao">
-          <option value="consulta_geral">Consulta Geral</option>
-          <option value="diagnostico_falha">Diagn&oacute;stico de Falha</option>
-          <option value="comparar_padrao_ouro">Comparar Padr&atilde;o Ouro &times; Ruins</option>
-        </select>
-
-        <label for="filtroCategoria">Categoria (Pasta)</label>
-        <select id="filtroCategoria">
-          <option value="">Todas as categorias</option>
-        </select>
-
-        <label for="filtroMaquina">M&aacute;quina / Linha</label>
-        <select id="filtroMaquina">
-          <option value="">Todas as m&aacute;quinas</option>
-        </select>
-
-        <label for="usuarioInput">Operador / Engenheiro</label>
-        <input type="text" id="usuarioInput" value="operador_local" placeholder="Seu nome ou matr&iacute;cula" />
-
-        <label class="checkbox-row">
-          <input type="checkbox" id="raciocinioProfundo" />
-          <span>Racioc&iacute;nio profundo (modelos Qwen3)</span>
-        </label>
-
-        <button class="btn-secondary" id="btnRecarregarFiltros" type="button">Atualizar Filtros</button>
+      <div class="sidebar-footer">
+        <button class="nav-item active" data-tab="chat" type="button">&#128172; Chat</button>
+        <button class="nav-item" data-tab="documentos" type="button">&#128194; Biblioteca</button>
+        <button class="nav-item" data-tab="historico" type="button">&#128202; Auditoria</button>
+        <div class="user-card">
+          <div class="user-avatar" id="userAvatar">A</div>
+          <div class="user-info">
+            <strong id="userNameDisplay">Usu&aacute;rio</strong>
+            <span id="connectionStatus">Online</span>
+          </div>
+          <button class="btn-logout" id="btnLogout" title="Sair" type="button">&#9099;</button>
+        </div>
       </div>
     </aside>
 
     <main class="main-content">
       <header class="mobile-header">
-        <button id="btnToggleMenu" class="btn-icon" type="button">&#9776; Menu</button>
+        <button id="btnToggleMenu" class="btn-icon" type="button">&#9776;</button>
         <strong>RAG Industrial</strong>
-        <button id="btnNovaConversaMobile" class="btn-icon" type="button">+ Novo</button>
+        <button id="btnNovaConversaMobile" class="btn-icon" type="button">+</button>
       </header>
 
-      <section class="tab-panel active" id="tab-chat">
-        <div class="chat-messages" id="chatMessages">
-          <div class="msg assistant">
-            <div class="msg-header">Assistente T&eacute;cnico &bull; Ollama Local</div>
-            <div class="msg-body">
-              Ol&aacute;! Escolha o modelo desejado no seletor abaixo (r&aacute;pido para perguntas diretas ou mais robusto para diagn&oacute;sticos t&eacute;cnicos) e avalie as respostas para aprimorar o sistema.
-            </div>
-          </div>
+      <div class="filters-drawer" id="filtersDrawer" style="display:none">
+        <div class="filters-grid">
+          <label>Modo
+            <select id="modoOperacao">
+              <option value="consulta_geral">Consulta Geral</option>
+              <option value="diagnostico_falha">Diagn&oacute;stico de Falha</option>
+              <option value="comparar_padrao_ouro">Padr&atilde;o Ouro &times; Ruins</option>
+            </select>
+          </label>
+          <label>Categoria <select id="filtroCategoria"><option value="">Todas</option></select></label>
+          <label>M&aacute;quina <select id="filtroMaquina"><option value="">Todas</option></select></label>
+          <label class="checkbox-inline"><input type="checkbox" id="raciocinioProfundo" /><span>Racioc&iacute;nio profundo (Qwen3)</span></label>
         </div>
+      </div>
 
-        <form class="chat-composer" id="chatForm">
-          <textarea
-            id="perguntaInput"
-            rows="1"
-            placeholder="Converse normalmente ou pergunte algo sobre os documentos..."
-            required
-          ></textarea>
-          <div class="composer-toolbar">
-            <div class="composer-left">
-              <button
-                type="button"
-                class="btn-attach"
-                title="Envio de fotos de defeitos/pain&eacute;is (etapa futura)"
-                disabled
-              >&#128247;</button>
-            </div>
-            <div class="composer-right">
-              <div class="model-picker-wrap" title="Selecionar modelo instalado no Ollama">
-                <select id="modeloSelect" aria-label="Modelo de IA">
-                  <option value="">Carregando modelos...</option>
-                </select>
-                <button type="button" id="btnAtualizarModelos" class="btn-refresh-models" title="Reescanear modelos do Ollama">&#8635;</button>
+      <section class="tab-panel active" id="tab-chat">
+        <div class="chat-messages" id="chatMessages"></div>
+        <div class="composer-wrap">
+          <form class="chat-composer" id="chatForm">
+            <textarea id="perguntaInput" rows="1" placeholder="Pergunte ao agente sobre processos, m&aacute;quinas ou documentos..." required></textarea>
+            <div class="composer-toolbar">
+              <button type="button" class="btn-chip-tool" id="btnToggleFiltros">&#9881; Filtros</button>
+              <div class="composer-right">
+                <div class="model-picker-wrap">
+                  <select id="modeloSelect" aria-label="Modelo"></select>
+                  <button type="button" id="btnAtualizarModelos" class="btn-refresh-models" title="Atualizar modelos">&#8635;</button>
+                </div>
+                <button type="submit" id="btnEnviar" class="btn-send" title="Enviar">&#10148;</button>
               </div>
-              <button type="submit" id="btnEnviar" class="btn-primary">Enviar</button>
             </div>
-          </div>
-        </form>
+          </form>
+        </div>
       </section>
 
       <section class="tab-panel" id="tab-documentos">
-        <div class="panel-header">
-          <h2>Documentos Indexados (C:\Biblioteca)</h2>
-          <button class="btn-secondary" id="btnAtualizarDocs" type="button">Recarregar</button>
-        </div>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Arquivo</th>
-                <th>Categoria</th>
-                <th>M&aacute;quina</th>
-                <th>Vers&atilde;o</th>
-                <th>P&aacute;gs.</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-            <tbody id="tabelaDocsBody">
-              <tr><td colspan="6">Carregando...</td></tr>
-            </tbody>
-          </table>
-        </div>
+        <div class="panel-header"><h2>Biblioteca Compartilhada</h2><button class="btn-secondary" id="btnAtualizarDocs" type="button">Recarregar</button></div>
+        <div class="table-wrap"><table><thead><tr><th>Arquivo</th><th>Categoria</th><th>M&aacute;quina</th><th>Vers&atilde;o</th><th>P&aacute;gs.</th><th>Status</th></tr></thead><tbody id="tabelaDocsBody"></tbody></table></div>
       </section>
 
       <section class="tab-panel" id="tab-historico">
-        <div class="panel-header">
-          <h2>Auditoria &amp; Curadoria de Aprendizado</h2>
-          <button class="btn-secondary" id="btnAtualizarHist" type="button">Recarregar</button>
-        </div>
-        <div class="audit-filters" id="auditFilters">
-          <button class="filter-chip active" data-filter="todos" type="button">Todos</button>
-          <button class="filter-chip" data-filter="aprovados" type="button">&#9733; Ativos no Aprendizado</button>
-          <button class="filter-chip" data-filter="uteis" type="button">&#128077; &Uacute;teis</button>
-          <button class="filter-chip" data-filter="ruins" type="button">&#128078; Corrigidos / Ruins</button>
-        </div>
-        <div class="history-list" id="listaHistorico">Carregando...</div>
+        <div class="panel-header"><h2>Auditoria &amp; Aprendizado Compartilhado</h2><button class="btn-secondary" id="btnAtualizarHist" type="button">Recarregar</button></div>
+        <div class="history-list" id="listaHistorico"></div>
       </section>
     </main>
   </div>
-
   <script src="lib/signalr.min.js"></script>
   <script src="app.js"></script>
 </body>

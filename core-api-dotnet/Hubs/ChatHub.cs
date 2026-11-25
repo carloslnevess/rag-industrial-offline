@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Text;
 using IndustrialRag.Api.Models;
 using IndustrialRag.Api.Services;
 using Microsoft.AspNetCore.SignalR;
@@ -9,10 +8,12 @@ namespace IndustrialRag.Api.Hubs;
 public class ChatHub : Hub
 {
     private readonly RagOrchestratorService _orchestrator;
+    private readonly AuthService _auth;
 
-    public ChatHub(RagOrchestratorService orchestrator)
+    public ChatHub(RagOrchestratorService orchestrator, AuthService auth)
     {
         _orchestrator = orchestrator;
+        _auth = auth;
     }
 
     public async Task EnviarPergunta(ConsultaRequest req)
@@ -23,45 +24,43 @@ public class ChatHub : Hub
 
         try
         {
-            await Clients.Caller.SendAsync("StatusAtualizado", $"Gerando resposta ({modeloAtivo})...", ct);
-
-            var casual = _orchestrator.EhConversaCasual(req.Pergunta);
-            List<FragmentoDto> fontes = [];
-            List<CasoValidadoDto> casosValidados = [];
-
-            if (!casual)
+            var user = await _auth.ValidarTokenAsync(req.AuthToken, ct);
+            if (user == null)
             {
-                var tarefaFontes = _orchestrator.BuscarContextoAsync(req, ct);
-                var tarefaCasos = _orchestrator.BuscarCasosValidadosAsync(req, ct);
-                await Task.WhenAll(tarefaFontes, tarefaCasos);
-                fontes = tarefaFontes.Result;
-                casosValidados = tarefaCasos.Result;
+                await Clients.Caller.SendAsync("ErroConsulta", "Sess\u00e3o expirada. Fa\u00e7a login novamente.", ct);
+                return;
             }
 
-            var respostaCompleta = new StringBuilder();
-            await foreach (var token in _orchestrator.GerarRespostaStreamAsync(req, fontes, casosValidados, ct))
-            {
-                respostaCompleta.Append(token);
-                await Clients.Caller.SendAsync("ReceberToken", token, ct);
-            }
+            req.Usuario = user.Username;
+            await Clients.Caller.SendAsync("StatusAtualizado", $"Agente analisando ({modeloAtivo})...", ct);
+
+            var (sessaoId, sessaoTitulo) = await _orchestrator.GarantirOuCriarSessaoAsync(user.Id, req.SessaoId, req.Pergunta, ct);
+
+            var resultado = await _orchestrator.ExecutarAgenteAsync(
+                req,
+                status => Clients.Caller.SendAsync("StatusAtualizado", status, ct),
+                ct);
 
             sw.Stop();
-            var textoFinal = RagOrchestratorService.LimparPensamento(respostaCompleta.ToString());
-            var historicoId = await _orchestrator.SalvarHistoricoAsync(req, textoFinal, fontes, sw.ElapsedMilliseconds, modeloAtivo, ct);
+            var historicoId = await _orchestrator.SalvarHistoricoComSessaoAsync(
+                req, resultado.Resposta, resultado.Fontes, sw.ElapsedMilliseconds, modeloAtivo, user.Id, sessaoId, ct);
 
             await Clients.Caller.SendAsync("FinalizarResposta", new
             {
-                resposta = textoFinal,
-                fontes,
-                casosValidados,
+                resposta = resultado.Resposta,
+                fontes = resultado.Fontes,
+                casosValidados = resultado.CasosValidados,
+                ferramentasUsadas = resultado.FerramentasUsadas,
                 historicoId,
+                sessaoId,
+                sessaoTitulo,
                 tempoMs = sw.ElapsedMilliseconds,
                 modelo = modeloAtivo
             }, ct);
         }
         catch (Exception ex)
         {
-            await Clients.Caller.SendAsync("ErroConsulta", $"Falha no processamento ({modeloAtivo}): {ex.Message}", ct);
+            await Clients.Caller.SendAsync("ErroConsulta", $"Falha no agente ({modeloAtivo}): {ex.Message}", ct);
         }
     }
 }
