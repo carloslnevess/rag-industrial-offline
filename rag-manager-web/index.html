@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Gerenciador Central â€¢ RAG Industrial</title>
+  <title>Gerenciador Central &bull; RAG Industrial</title>
   <style>
     :root { --bg:#0f141a; --panel:#161d26; --alt:#1d2633; --border:#2b3748; --text:#e6edf3; --muted:#93a3b8; --accent:#3b82f6; --ok:#22c55e; --warn:#f59e0b; --err:#ef4444; }
     * { box-sizing: border-box; }
@@ -14,7 +14,7 @@
     .grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap:12px; }
     .card { background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:14px; }
     .card h2 { margin:0 0 10px; font-size:0.95rem; color:#93c5fd; text-transform:uppercase; letter-spacing:0.04em; }
-    .status-row { display:flex; justify-content:space-between; align-items:center; padding:6px 0; border-bottom:1px solid rgba(43,55,72,0.5); font-size:0.9rem; }
+    .status-row { display:flex; justify-content:space-between; align-items:center; padding:6px 0; border-bottom:1px solid rgba(43,55,72,0.5); font-size:0.9rem; gap:8px; }
     .status-row:last-child { border-bottom:none; }
     .badge { padding:3px 9px; border-radius:999px; font-size:0.75rem; font-weight:700; }
     .badge.on { background:rgba(34,197,94,0.18); color:#86efac; }
@@ -41,17 +41,17 @@
     <header>
       <div>
         <h1>Gerenciador Central &bull; RAG Industrial Offline</h1>
-        <span style="font-size:0.82rem;color:var(--muted)">Monitoramento de servicos, gargalos, tokens e manutencao (Porta 8090)</span>
+        <span style="font-size:0.82rem;color:var(--muted)">Monitoramento de servi&ccedil;os, gargalos, tokens e manuten&ccedil;&atilde;o (Porta 8090)</span>
       </div>
       <div class="btn-row">
-        <button class="btn-sec" onclick="loadStatus()">Atualizar Agora</button>
+        <button class="btn-sec" type="button" onclick="loadStatus()">Atualizar Agora</button>
         <a href="http://localhost:5000" target="_blank"><button class="btn-primary" type="button">Abrir Chat RAG (5000)</button></a>
       </div>
     </header>
 
     <div class="grid">
       <div class="card">
-        <h2>Servicos</h2>
+        <h2>Servi&ccedil;os</h2>
         <div class="status-row"><span>PostgreSQL (5432)</span><span id="st-pg" class="badge off">...</span></div>
         <div class="status-row"><span>Ollama (11434)</span><span id="st-ol" class="badge off">...</span></div>
         <div class="status-row"><span>Worker Python (8001)</span><span id="st-py" class="badge off">...</span></div>
@@ -61,7 +61,7 @@
       <div class="card">
         <h2>Hardware &amp; RAM Ollama</h2>
         <div class="status-row"><span>CPU</span><strong id="hw-cpu">-</strong></div>
-        <div class="status-row"><span>Memoria RAM</span><strong id="hw-ram">-</strong></div>
+        <div class="status-row"><span>Mem&oacute;ria RAM</span><strong id="hw-ram">-</strong></div>
         <div style="margin-top:8px;font-size:0.8rem;color:var(--muted)">Carregado na RAM do Ollama agora:</div>
         <div id="ol-loaded" style="margin-top:4px;font-size:0.85rem;color:#fcd34d">-</div>
       </div>
@@ -69,10 +69,10 @@
       <div class="card">
         <h2>Controle de Energia</h2>
         <div class="btn-row">
-          <button class="btn-ok" onclick="control('start_all')">Ligar Tudo</button>
-          <button class="btn-err" onclick="control('stop_app')">Parar App</button>
-          <button class="btn-warn" onclick="control('restart_api')">Reiniciar API C#</button>
-          <button class="btn-sec" onclick="control('restart_python')">Reiniciar Python</button>
+          <button class="btn-ok" type="button" onclick="control('start_all')">Ligar Tudo</button>
+          <button class="btn-err" type="button" onclick="control('stop_app')">Parar App</button>
+          <button class="btn-warn" type="button" onclick="control('restart_api')">Reiniciar API C#</button>
+          <button class="btn-sec" type="button" onclick="control('restart_python')">Reiniciar Python</button>
         </div>
         <div id="ctrl-msg" class="toast"></div>
       </div>
@@ -85,51 +85,53 @@
           <select id="bench-model"></select>
         </label>
         <label>Mensagem de teste
-          <input id="bench-prompt" value="OlÃ¡" />
+          <input id="bench-prompt" value="Ol&aacute;" />
         </label>
       </div>
-      <button id="btn-bench" class="btn-primary" onclick="runBenchmark()">Executar Raio-X (Ollama Direto vs API C#)</button>
+      <button id="btn-bench" class="btn-primary" type="button" onclick="runBenchmark()">Executar Raio-X (Ollama Direto vs API C#)</button>
       <div id="bench-result"></div>
     </div>
 
     <div class="card">
-      <h2>Gerenciador de Tokens &amp; Parametros (.env)</h2>
+      <h2>Gerenciador de Tokens &amp; Par&acirc;metros (.env)</h2>
       <div class="form-grid">
-        <label>Modelo Padrao (LLM_MODEL)<input id="env-LLM_MODEL" /></label>
+        <label>Modelo Padr&atilde;o (LLM_MODEL)<input id="env-LLM_MODEL" /></label>
         <label>Max Tokens Gerados (OLLAMA_NUM_PREDICT)<input id="env-OLLAMA_NUM_PREDICT" type="number" /></label>
         <label>Janela de Contexto (OLLAMA_NUM_CTX)<input id="env-OLLAMA_NUM_CTX" type="number" /></label>
         <label>Threads CPU (OLLAMA_NUM_THREAD)<input id="env-OLLAMA_NUM_THREAD" type="number" /></label>
         <label>Keep Alive RAM (OLLAMA_KEEP_ALIVE)<input id="env-OLLAMA_KEEP_ALIVE" /></label>
         <label>Max Modelos RAM (OLLAMA_MAX_LOADED_MODELS)<input id="env-OLLAMA_MAX_LOADED_MODELS" type="number" /></label>
       </div>
-      <button class="btn-primary" onclick="saveEnv()">Salvar no .env</button>
+      <button class="btn-primary" type="button" onclick="saveEnv()">Salvar no .env</button>
       <div id="env-msg" class="toast"></div>
     </div>
 
-        <div class="card">
-      <h2>Gestao de Usuarios (Criptografia PBKDF2-SHA256)</h2>
+    <div class="card">
+      <h2>Gest&atilde;o de Usu&aacute;rios (Criptografia PBKDF2-SHA256)</h2>
       <div class="form-grid">
-        <label>Usuario (login)<input id="u-user" placeholder="ex: joao.silva" /></label>
+        <label>Usu&aacute;rio (login)<input id="u-user" placeholder="ex: joao.silva" /></label>
         <label>Nome completo<input id="u-nome" placeholder="ex: Joao Silva" /></label>
         <label>Senha inicial<input id="u-pass" type="password" placeholder="Minimo 4 caracteres" /></label>
         <label>Perfil<select id="u-perfil"><option value="operador">Operador</option><option value="admin">Administrador</option></select></label>
       </div>
       <div class="btn-row">
-        <button class="btn-ok" onclick="createUser()">Criar Usuario</button>
-        <button class="btn-sec" onclick="loadUsers()">Atualizar Lista</button>
+        <button class="btn-ok" type="button" onclick="createUser()">Criar Usu&aacute;rio</button>
+        <button class="btn-sec" type="button" onclick="loadUsers()">Atualizar Lista</button>
       </div>
       <div id="u-msg" class="toast"></div>
       <div id="users-list" style="margin-top:10px"></div>
     </div>
+
     <div class="card">
-      <h2>Manutencao &amp; Auditoria Tecnica</h2>
+      <h2>Manuten&ccedil;&atilde;o &amp; Auditoria T&eacute;cnica</h2>
       <div class="btn-row">
-        <button class="btn-sec" onclick="runMaint('db_stats')">Estatisticas PostgreSQL</button>
-        <button class="btn-sec" onclick="runMaint('vacuum')">Otimizar Banco (VACUUM)</button>
-        <button class="btn-sec" onclick="runMaint('clean_bak')">Limpar Arquivos .bak</button>
-        <button class="btn-sec" onclick="runMaint('git_status')">Git Status</button>
+        <button class="btn-sec" type="button" onclick="runMaint('db_stats')">Estat&iacute;sticas PostgreSQL</button>
+        <button class="btn-sec" type="button" onclick="runMaint('vacuum')">Otimizar Banco (VACUUM)</button>
+        <button class="btn-sec" type="button" onclick="runMaint('clean_bak')">Limpar Arquivos .bak</button>
+        <button class="btn-sec" type="button" onclick="runMaint('git_status')">Git Status</button>
+        <button class="btn-primary" type="button" onclick="runMaint('project_audit')">Auditar Projeto Completo</button>
       </div>
-      <pre id="maint-out">Clique em uma acao acima para ver o resultado...</pre>
+      <pre id="maint-out">Clique em uma a&ccedil;&atilde;o acima para ver o resultado...</pre>
     </div>
   </div>
 
@@ -138,6 +140,7 @@
 
     function setBadge(id, ok) {
       const el = document.getElementById(id);
+      if (!el) return;
       el.textContent = ok ? "ONLINE" : "OFFLINE";
       el.className = "badge " + (ok ? "on" : "off");
     }
@@ -145,6 +148,7 @@
     async function loadStatus() {
       try {
         const res = await fetch("/api/status");
+        if (!res.ok) throw new Error("HTTP " + res.status);
         const d = await res.json();
         setBadge("st-pg", d.services.postgres);
         setBadge("st-ol", d.services.ollama);
@@ -157,7 +161,7 @@
 
         document.getElementById("ol-loaded").textContent = d.ollama_loaded.length
           ? d.ollama_loaded.map(m => `${m.name} (${m.size_gb} GB)`).join(", ")
-          : "Nenhum modelo na RAM (cold start na proxima consulta)";
+          : "Nenhum modelo na RAM (cold start na pr\u00f3xima consulta)";
 
         const sel = document.getElementById("bench-model");
         if (sel.options.length === 0 && d.ollama_installed.length) {
@@ -165,19 +169,25 @@
           sel.value = d.env.LLM_MODEL || d.ollama_installed[0].name;
         }
 
-        if (!envLoaded) {
+        if (!envLoaded && d.env) {
           ["LLM_MODEL","OLLAMA_NUM_PREDICT","OLLAMA_NUM_CTX","OLLAMA_NUM_THREAD","OLLAMA_KEEP_ALIVE","OLLAMA_MAX_LOADED_MODELS"]
             .forEach(k => { const inp = document.getElementById("env-" + k); if (inp) inp.value = d.env[k] || ""; });
           envLoaded = true;
         }
-      } catch (e) { console.error(e); }
+      } catch (e) {
+        console.error("Erro em loadStatus:", e);
+        ["st-pg","st-ol","st-py","st-api"].forEach(id => {
+          const el = document.getElementById(id);
+          if (el) { el.textContent = "ERRO"; el.className = "badge off"; }
+        });
+      }
     }
 
     async function control(action) {
       document.getElementById("ctrl-msg").textContent = "Executando...";
       const res = await fetch("/api/control/" + action, { method: "POST" });
       const d = await res.json();
-      document.getElementById("ctrl-msg").textContent = d.message || "Concluido";
+      document.getElementById("ctrl-msg").textContent = d.message || "Conclu\u00eddo";
       setTimeout(loadStatus, 1500);
     }
 
@@ -215,57 +225,14 @@
         box.innerHTML = `
           <pre>Modelo: ${d.modelo}
 Carga na RAM (load_duration) : ${o.load_s}s
-Avaliacao Prompt             : ${o.prompt_eval_s}s (${o.in_tokens} tokens)
-Geracao Resposta             : ${o.eval_s}s (${o.out_tokens} tokens -> ${o.tokens_per_sec} tok/s)
+Avalia&ccedil;&atilde;o Prompt             : ${o.prompt_eval_s}s (${o.in_tokens} tokens)
+Gera&ccedil;&atilde;o Resposta             : ${o.eval_s}s (${o.out_tokens} tokens -> ${o.tokens_per_sec} tok/s)
 Total Ollama Direto          : ${o.total_s}s
 Total Core API C# (/api/chat): ${d.core_api_total_s !== null ? d.core_api_total_s + "s" : "API C# Offline"}
 Resposta: "${d.resposta}"</pre>
           ${diags}
         `;
         loadStatus();
-    async function loadUsers() {
-      const box = document.getElementById("users-list");
-      try {
-        const res = await fetch("/api/users");
-        const users = await res.json();
-        box.innerHTML = users.map(u => `
-          <div class="status-row">
-            <span><strong>${u.username}</strong> (${u.nome_exibicao}) &bull; <small>${u.perfil}</small></span>
-            <div class="btn-row">
-              <button class="btn-sec" onclick="resetPass('${u.id}','${u.username}')">Trocar Senha</button>
-              <button class="btn-err" onclick="deleteUser('${u.id}','${u.username}')">Excluir</button>
-            </div>
-          </div>
-        `).join("") || "Nenhum usuario cadastrado.";
-      } catch { box.textContent = "Erro ao carregar usuarios."; }
-    }
-    async function createUser() {
-      const res = await fetch("/api/users", {
-        method: "POST", headers: {"Content-Type":"application/json"},
-        body: JSON.stringify({
-          username: document.getElementById("u-user").value,
-          nome_exibicao: document.getElementById("u-nome").value,
-          senha: document.getElementById("u-pass").value,
-          perfil: document.getElementById("u-perfil").value
-        })
-      });
-      const d = await res.json();
-      document.getElementById("u-msg").textContent = d.message || d.detail;
-      if (res.ok) { document.getElementById("u-user").value=""; document.getElementById("u-nome").value=""; document.getElementById("u-pass").value=""; loadUsers(); }
-    }
-    async function resetPass(id, uname) {
-      const p = prompt("Nova senha para " + uname + ":");
-      if (!p) return;
-      const res = await fetch(`/api/users/${id}/password`, { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ nova_senha: p }) });
-      const d = await res.json();
-      document.getElementById("u-msg").textContent = d.message || d.detail;
-    }
-    async function deleteUser(id, uname) {
-      if (!confirm("Excluir definitivamente o usuario " + uname + " e todas as suas conversas?")) return;
-      await fetch(`/api/users/${id}`, { method: "DELETE" });
-      loadUsers();
-    }
-    loadUsers();
       } catch (e) {
         box.innerHTML = `<pre style="color:#fca5a5">Erro: ${e.message}</pre>`;
       } finally {
@@ -276,28 +243,33 @@ Resposta: "${d.resposta}"</pre>
     async function runMaint(task) {
       const out = document.getElementById("maint-out");
       out.textContent = "Executando...";
-      const res = await fetch("/api/maintenance/" + task, { method: "POST" });
-      const d = await res.json();
-      out.textContent = d.output || "Concluido.";
+      try {
+        const res = await fetch("/api/maintenance/" + task, { method: "POST" });
+        const d = await res.json();
+        out.textContent = d.output || "Conclu\u00eddo.";
+      } catch (e) {
+        out.textContent = "Erro: " + e.message;
+      }
     }
 
-    loadStatus();
     async function loadUsers() {
       const box = document.getElementById("users-list");
       try {
         const res = await fetch("/api/users");
+        if (!res.ok) throw new Error("HTTP " + res.status);
         const users = await res.json();
         box.innerHTML = users.map(u => `
           <div class="status-row">
             <span><strong>${u.username}</strong> (${u.nome_exibicao}) &bull; <small>${u.perfil}</small></span>
             <div class="btn-row">
-              <button class="btn-sec" onclick="resetPass('${u.id}','${u.username}')">Trocar Senha</button>
-              <button class="btn-err" onclick="deleteUser('${u.id}','${u.username}')">Excluir</button>
+              <button class="btn-sec" type="button" onclick="resetPass('${u.id}','${u.username}')">Trocar Senha</button>
+              <button class="btn-err" type="button" onclick="deleteUser('${u.id}','${u.username}')">Excluir</button>
             </div>
           </div>
-        `).join("") || "Nenhum usuario cadastrado.";
-      } catch { box.textContent = "Erro ao carregar usuarios."; }
+        `).join("") || "Nenhum usu\u00e1rio cadastrado.";
+      } catch { box.textContent = "Usu\u00e1rios indispon\u00edveis (verifique o PostgreSQL)."; }
     }
+
     async function createUser() {
       const res = await fetch("/api/users", {
         method: "POST", headers: {"Content-Type":"application/json"},
@@ -312,6 +284,7 @@ Resposta: "${d.resposta}"</pre>
       document.getElementById("u-msg").textContent = d.message || d.detail;
       if (res.ok) { document.getElementById("u-user").value=""; document.getElementById("u-nome").value=""; document.getElementById("u-pass").value=""; loadUsers(); }
     }
+
     async function resetPass(id, uname) {
       const p = prompt("Nova senha para " + uname + ":");
       if (!p) return;
@@ -319,11 +292,14 @@ Resposta: "${d.resposta}"</pre>
       const d = await res.json();
       document.getElementById("u-msg").textContent = d.message || d.detail;
     }
+
     async function deleteUser(id, uname) {
-      if (!confirm("Excluir definitivamente o usuario " + uname + " e todas as suas conversas?")) return;
+      if (!confirm("Excluir definitivamente o usu\u00e1rio " + uname + " e todas as suas conversas?")) return;
       await fetch(`/api/users/${id}`, { method: "DELETE" });
       loadUsers();
     }
+
+    loadStatus();
     loadUsers();
     setInterval(loadStatus, 5000);
   </script>

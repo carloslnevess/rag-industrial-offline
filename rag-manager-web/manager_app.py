@@ -1,13 +1,16 @@
+import base64
+import hashlib
 import json
 import os
 import platform
+import secrets
 import socket
 import subprocess
 import time
 import urllib.error
 import urllib.request
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
@@ -53,6 +56,17 @@ class EnvUpdateRequest(BaseModel):
     values: Dict[str, str]
 
 
+class UserCreateRequest(BaseModel):
+    username: str
+    nome_exibicao: str
+    senha: str
+    perfil: str = "operador"
+
+
+class UserPasswordRequest(BaseModel):
+    nova_senha: str
+
+
 def read_env() -> Dict[str, str]:
     cfg = dict(DEFAULT_ENV)
     if ENV_FILE.exists():
@@ -69,33 +83,71 @@ def write_env(cfg: Dict[str, str]) -> None:
     ENV_FILE.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+def parse_pg_dsn(dsn: str) -> Dict[str, str]:
+    info = {"Host": "localhost", "Port": "5432", "Database": "industrial_rag", "Username": "rag_admin", "Password": "rag_password_dev"}
+    for part in dsn.split(";"):
+        if "=" in part:
+            k, v = part.split("=", 1)
+            info[k.strip()] = v.strip()
+    return info
+
+
 def check_port(port: int, host: str = "127.0.0.1", timeout: float = 0.4) -> bool:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.settimeout(timeout)
         return s.connect_ex((host, port)) == 0
 
 
-def http_json(url: str, method: str = "GET", payload: Optional[dict] = None, timeout: int = 10):
+def http_json(url: str, method: str = "GET", payload: Optional[dict] = None, headers: Optional[dict] = None, timeout: int = 10):
     data = json.dumps(payload).encode("utf-8") if payload is not None else None
-    req = urllib.request.Request(
-        url,
-        data=data,
-        method=method,
-        headers={"Content-Type": "application/json; charset=utf-8"},
-    )
+    req_headers = {"Content-Type": "application/json; charset=utf-8"}
+    if headers:
+        req_headers.update(headers)
+    req = urllib.request.Request(url, data=data, method=method, headers=req_headers)
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         return json.loads(resp.read().decode("utf-8"))
 
 
-def run_cmd(cmd: list, cwd: Optional[Path] = None, timeout: int = 30):
+def run_cmd(cmd: list, cwd: Optional[Path] = None, env: Optional[dict] = None, timeout: int = 30):
     res = subprocess.run(
         cmd,
         cwd=str(cwd) if cwd else None,
+        env=env,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         timeout=timeout,
     )
     return res.returncode, res.stdout.strip(), res.stderr.strip()
+
+
+def run_psql(sql: str, vars_dict: Optional[Dict[str, str]] = None, tuples_only: bool = False):
+    """Executa SQL via container Docker (dev) ou psql nativo (Linux producao)."""
+    cfg = read_env()
+    dsn = parse_pg_dsn(cfg.get("DB_CONNECTION", ""))
+    var_args: List[str] = []
+    if vars_dict:
+        for k, v in vars_dict.items():
+            var_args.extend(["-v", f"{k}={v}"])
+
+    fmt_args = ["-t", "-A", "-F", "|"] if tuples_only else []
+
+    use_docker = False
+    try:
+        rc_d, out_d, _ = run_cmd(["docker", "ps", "--filter", f"name={PG_CONTAINER}", "--format", "{{.Names}}"], timeout=2)
+        use_docker = rc_d == 0 and PG_CONTAINER in out_d
+    except Exception:
+        use_docker = False
+
+    if use_docker:
+        cmd = ["docker", "exec", "-i", PG_CONTAINER, "psql", "-v", "ON_ERROR_STOP=1", "-U", dsn["Username"], "-d", dsn["Database"], *fmt_args, *var_args, "-c", sql]
+        return run_cmd(cmd, timeout=20)
+
+    env = os.environ.copy()
+    env["PGPASSWORD"] = dsn["Password"]
+    cmd = ["psql", "-v", "ON_ERROR_STOP=1", "-h", dsn["Host"], "-p", dsn["Port"], "-U", dsn["Username"], "-d", dsn["Database"], *fmt_args, *var_args, "-c", sql]
+    return run_cmd(cmd, env=env, timeout=20)
 
 
 def kill_port(port: int) -> str:
@@ -131,6 +183,27 @@ def get_system_stats():
     return {"cpu_percent": None, "ram_used_gb": None, "ram_total_gb": None, "ram_percent": None}
 
 
+def _hash_pbkdf2(senha: str):
+    salt = secrets.token_bytes(16)
+    dk = hashlib.pbkdf2_hmac("sha256", senha.encode("utf-8"), salt, 100_000, dklen=32)
+    return base64.b64encode(dk).decode("ascii"), base64.b64encode(salt).decode("ascii")
+
+
+def _criar_token_temporario_benchmark() -> Optional[str]:
+    """Gera um token curto no banco para permitir que o benchmark autentique na Core API C#."""
+    token = secrets.token_hex(32)
+    sql = """
+        INSERT INTO usuarios_tokens (token, usuario_id, expira_em)
+        SELECT :'tok', id, NOW() + INTERVAL '5 minutes'
+        FROM usuarios
+        WHERE ativo = TRUE
+        ORDER BY CASE WHEN perfil = 'admin' THEN 0 ELSE 1 END, criado_em ASC
+        LIMIT 1;
+    """
+    rc, _, _ = run_psql(sql, {"tok": token})
+    return token if rc == 0 else None
+
+
 @app.get("/", response_class=HTMLResponse)
 def index():
     html_path = BASE_DIR / "index.html"
@@ -141,8 +214,8 @@ def index():
 def api_status():
     pg_running = False
     try:
-        rc, out, _ = run_cmd(["docker", "ps", "--filter", f"name={PG_CONTAINER}", "--format", "{{.Names}}"], timeout=5)
-        pg_running = rc == 0 and PG_CONTAINER in out
+        rc, out, _ = run_cmd(["docker", "ps", "--filter", f"name={PG_CONTAINER}", "--format", "{{.Names}}"], timeout=2)
+        pg_running = (rc == 0 and PG_CONTAINER in out) or check_port(5432)
     except Exception:
         pg_running = check_port(5432)
 
@@ -153,10 +226,7 @@ def api_status():
         try:
             ps_data = http_json(f"{OLLAMA_URL}/api/ps", timeout=3)
             for m in ps_data.get("models", []):
-                loaded_models.append({
-                    "name": m.get("name"),
-                    "size_gb": round(m.get("size", 0) / (1024**3), 2),
-                })
+                loaded_models.append({"name": m.get("name"), "size_gb": round(m.get("size", 0) / (1024**3), 2)})
         except Exception:
             pass
         try:
@@ -164,10 +234,7 @@ def api_status():
             for m in tags_data.get("models", []):
                 name = m.get("name", "")
                 if "embed" not in name.lower():
-                    installed_models.append({
-                        "name": name,
-                        "size_gb": round(m.get("size", 0) / (1024**3), 2),
-                    })
+                    installed_models.append({"name": name, "size_gb": round(m.get("size", 0) / (1024**3), 2)})
         except Exception:
             pass
 
@@ -292,20 +359,26 @@ def api_benchmark(req: BenchmarkRequest):
 
     api_s = None
     if check_port(5000):
+        bench_token = _criar_token_temporario_benchmark()
         try:
             t0 = time.perf_counter()
+            headers = {"Authorization": f"Bearer {bench_token}"} if bench_token else {}
             http_json(
                 f"{API_URL}/api/chat",
                 method="POST",
-                payload={"pergunta": prompt, "modeloLlm": modelo, "usuario": "benchmark_web"},
+                payload={"pergunta": prompt, "modeloLlm": modelo},
+                headers=headers,
                 timeout=180,
             )
             api_s = round(time.perf_counter() - t0, 2)
             diff = round(api_s - total_s, 2)
             if diff > 2.5:
-                diagnostico.append(f"Sobrecarga da Core API (+{diff}s acima do Ollama direto): causado pelo System Prompt completo, historico ou busca no banco.")
+                diagnostico.append(f"Sobrecarga da Core API (+{diff}s acima do Ollama direto): causado pelo System Prompt, ferramentas ou busca no banco.")
         except Exception as e:
             diagnostico.append(f"Nao foi possivel comparar com a Core API: {e}")
+        finally:
+            if bench_token:
+                run_psql("DELETE FROM usuarios_tokens WHERE token = :'tok';", {"tok": bench_token})
 
     if not diagnostico:
         diagnostico.append("Desempenho saudavel para inferencia local em CPU.")
@@ -337,11 +410,12 @@ def api_maintenance(task: str):
             "UNION ALL SELECT 'Casos no Aprendizado', count(*)::text FROM historico_analises WHERE aprovado_conhecimento=TRUE "
             "UNION ALL SELECT 'Tamanho do Banco', pg_size_pretty(pg_database_size('industrial_rag'));"
         )
-        rc, out, err = run_cmd(["docker", "exec", "-i", PG_CONTAINER, "psql", "-U", "rag_admin", "-d", "industrial_rag", "-t", "-A", "-F", ": ", "-c", sql])
-        return {"ok": rc == 0, "output": out or err}
+        rc, out, err = run_psql(sql, tuples_only=True)
+        formatted = "\n".join(line.replace("|", ": ", 1) for line in out.splitlines()) if out else err
+        return {"ok": rc == 0, "output": formatted}
 
     if task == "vacuum":
-        rc, out, err = run_cmd(["docker", "exec", "-i", PG_CONTAINER, "psql", "-U", "rag_admin", "-d", "industrial_rag", "-c", "VACUUM ANALYZE;"])
+        rc, out, err = run_psql("VACUUM ANALYZE;")
         return {"ok": rc == 0, "output": out or err or "VACUUM ANALYZE concluido."}
 
     if task == "clean_bak":
@@ -357,39 +431,24 @@ def api_maintenance(task: str):
         rc, out, err = run_cmd(["git", "status", "-s"], cwd=LAB_ROOT)
         return {"ok": rc == 0, "output": out or err or "Repositorio limpo (sem alteracoes pendentes)."}
 
+    if task == "project_audit":
+        script_path = LAB_ROOT / "Gerar-RaioX-Projeto.ps1"
+        audit_file = LAB_ROOT / "_auditoria_projeto.txt"
+        if not script_path.exists():
+            return {"ok": False, "output": f"Script nao encontrado em {script_path}"}
+        rc, out, err = run_cmd(["powershell", "-ExecutionPolicy", "Bypass", "-File", str(script_path)], cwd=LAB_ROOT, timeout=60)
+        if audit_file.exists():
+            txt = audit_file.read_text(encoding="utf-8", errors="ignore")
+            return {"ok": rc == 0, "output": txt}
+        return {"ok": rc == 0, "output": out or err}
+
     raise HTTPException(status_code=400, detail="Tarefa invalida")
-
-# --- GESTAO DE USUARIOS (PBKDF2-HMAC-SHA256 100k - compativel com AuthService.cs) ---
-import base64 as _b64
-import hashlib as _hashlib
-import secrets as _secrets
-
-
-class UserCreateRequest(BaseModel):
-    username: str
-    nome_exibicao: str
-    senha: str
-    perfil: str = "operador"
-
-
-class UserPasswordRequest(BaseModel):
-    nova_senha: str
-
-
-def _hash_pbkdf2(senha: str):
-    salt = _secrets.token_bytes(16)
-    dk = _hashlib.pbkdf2_hmac("sha256", senha.encode("utf-8"), salt, 100_000, dklen=32)
-    return _b64.b64encode(dk).decode("ascii"), _b64.b64encode(salt).decode("ascii")
-
-
-def _sql_esc(v: str) -> str:
-    return (v or "").replace("'", "''")
 
 
 @app.get("/api/users")
 def api_list_users():
     sql = "SELECT id::text, username, nome_exibicao, perfil, ativo::text, to_char(criado_em, 'DD/MM/YYYY HH24:MI') FROM usuarios ORDER BY criado_em DESC;"
-    rc, out, err = run_cmd(["docker", "exec", "-i", PG_CONTAINER, "psql", "-U", "rag_admin", "-d", "industrial_rag", "-t", "-A", "-F", "|", "-c", sql])
+    rc, out, err = run_psql(sql, tuples_only=True)
     if rc != 0:
         raise HTTPException(status_code=500, detail=err)
     users = []
@@ -404,11 +463,12 @@ def api_list_users():
 def api_create_user(req: UserCreateRequest):
     u = req.username.strip().lower()
     n = req.nome_exibicao.strip() or u
+    perfil = req.perfil.strip() if req.perfil in ("operador", "admin") else "operador"
     if len(u) < 3 or len(req.senha) < 4:
         raise HTTPException(status_code=400, detail="Usuario (min 3) e senha (min 4) obrigatorios.")
     h, s = _hash_pbkdf2(req.senha)
-    sql = f"INSERT INTO usuarios (username, nome_exibicao, senha_hash, senha_salt, perfil, ativo) VALUES ('{_sql_esc(u)}', '{_sql_esc(n)}', '{h}', '{s}', '{_sql_esc(req.perfil)}', TRUE);"
-    rc, _, err = run_cmd(["docker", "exec", "-i", PG_CONTAINER, "psql", "-U", "rag_admin", "-d", "industrial_rag", "-c", sql])
+    sql = "INSERT INTO usuarios (username, nome_exibicao, senha_hash, senha_salt, perfil, ativo) VALUES (:'u', :'n', :'h', :'s', :'p', TRUE);"
+    rc, _, err = run_psql(sql, {"u": u, "n": n, "h": h, "s": s, "p": perfil})
     if rc != 0:
         raise HTTPException(status_code=400, detail="Usuario ja existe ou erro no banco: " + err)
     return {"ok": True, "message": f"Usuario '{u}' criado com senha criptografada (PBKDF2-SHA256)."}
@@ -419,8 +479,8 @@ def api_reset_password(user_id: str, req: UserPasswordRequest):
     if len(req.nova_senha) < 4:
         raise HTTPException(status_code=400, detail="Senha deve ter no minimo 4 caracteres.")
     h, s = _hash_pbkdf2(req.nova_senha)
-    sql = f"UPDATE usuarios SET senha_hash='{h}', senha_salt='{s}' WHERE id='{_sql_esc(user_id)}'; DELETE FROM usuarios_tokens WHERE usuario_id='{_sql_esc(user_id)}';"
-    rc, _, err = run_cmd(["docker", "exec", "-i", PG_CONTAINER, "psql", "-U", "rag_admin", "-d", "industrial_rag", "-c", sql])
+    sql = "UPDATE usuarios SET senha_hash = :'h', senha_salt = :'s' WHERE id = :'uid'; DELETE FROM usuarios_tokens WHERE usuario_id = :'uid';"
+    rc, _, err = run_psql(sql, {"h": h, "s": s, "uid": user_id})
     if rc != 0:
         raise HTTPException(status_code=500, detail=err)
     return {"ok": True, "message": "Senha redefinida e sessoes anteriores revogadas."}
@@ -428,8 +488,7 @@ def api_reset_password(user_id: str, req: UserPasswordRequest):
 
 @app.delete("/api/users/{user_id}")
 def api_delete_user(user_id: str):
-    sql = f"DELETE FROM usuarios WHERE id='{_sql_esc(user_id)}';"
-    rc, _, err = run_cmd(["docker", "exec", "-i", PG_CONTAINER, "psql", "-U", "rag_admin", "-d", "industrial_rag", "-c", sql])
+    rc, _, err = run_psql("DELETE FROM usuarios WHERE id = :'uid';", {"uid": user_id})
     if rc != 0:
         raise HTTPException(status_code=500, detail=err)
     return {"ok": True, "message": "Usuario excluido com sucesso."}
